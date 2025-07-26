@@ -1,38 +1,39 @@
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const cors = require('cors');
-require('dotenv').config(); // Indlæser miljøvariabler fra .env-filen
+require('dotenv').config(); // Gør det muligt at bruge .env-fil til hemmelige nøgler
 
-// Opret en Express-app
+// 2. Initialiser Express og opsæt middleware
 const app = express();
+app.use(cors()); // Tillader anmodninger fra din frontend
+app.use(express.json()); // Gør det muligt at læse JSON-data sendt fra frontend
 
-// Brug CORS middleware til at tillade anmodninger fra andre domæner (din frontend)
-app.use(cors());
-
-// Brug middleware til at parse JSON i request body
-app.use(express.json());
-
-// Initialiser Google Generative AI med din API-nøgle fra miljøvariablerne
-// Sørg for at have en .env fil med linjen: GEMINI_API_KEY=DIN_API_NØGLE
+// 3. Initialiser Google AI
+// Din hemmelige API-nøgle hentes sikkert fra miljøvariablerne
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Definer API-endepunktet
+// 4. Definer det ENESTE API-endepunkt, som alle funktioner skal bruge
 app.post('/api/generate', async (req, res) => {
-  // Hent 'prompt' og 'schema' fra request body
+  
+  // Hent 'prompt' og 'schema' fra den anmodning, som din frontend sender
   const { prompt, schema } = req.body;
 
-  // Tjek om prompt mangler
+  // Fejlhåndtering: Sørg for, at der altid er en prompt
   if (!prompt) {
-    return res.status(400).json({ error: 'Prompt mangler' });
+    return res.status(400).json({ error: 'Prompt mangler i anmodningen.' });
+  }
+   // Fejlhåndtering: Sørg for, at der altid er et schema
+  if (!schema) {
+    return res.status(400).json({ error: 'Schema mangler i anmodningen.' });
   }
 
   try {
-    // Vælg AI-modellen
+    // Vælg AI-modellen og konfigurer den til at forvente et JSON-svar
     const model = genAI.getGenerativeModel({ 
         model: 'gemini-1.5-flash',
         generationConfig: {
             responseMimeType: "application/json",
-            responseSchema: schema,
+            responseSchema: schema, // Fortæl AI'en præcis hvordan svaret skal struktureres
         },
     });
 
@@ -41,29 +42,27 @@ app.post('/api/generate', async (req, res) => {
     const response = await result.response;
     const text = response.text();
 
-    // Prøv at parse teksten som JSON (selvom AI'en burde returnere det korrekt)
+    // AI'en bør returnere ren JSON-tekst takket være schema'et.
+    // Vi parser det for at sikre, at det er gyldigt, før vi sender det tilbage.
     try {
       const jsonData = JSON.parse(text);
-      // Send det parsede JSON-svar tilbage til klienten
+      // Send det færdige JSON-svar tilbage til frontend
       res.json(jsonData);
     } catch (e) {
-      // Hvis der opstår en fejl under parsing, er svaret sandsynligvis ikke gyldigt JSON
       console.error("Svar fra AI var ikke gyldigt JSON:", text);
       res.status(500).json({ error: 'Svar fra AI var ikke i det forventede format.' });
     }
 
   } catch (error) {
-    // Håndter fejl, hvis kaldet til AI'en mislykkes
+    // Håndter eventuelle fejl under kaldet til Google AI
     console.error('Fejl ved kald til Google AI:', error);
     res.status(500).json({ error: 'Der opstod en fejl på serveren ved kald til AI.' });
   }
 });
 
-// Definer porten, som serveren skal lytte på
-// Render.com sætter automatisk en PORT-miljøvariabel
+// 5. Start serveren
+// Render.com vil automatisk bruge den korrekte port
 const PORT = process.env.PORT || 3001;
-
-// Start serveren
 app.listen(PORT, () => {
   console.log(`Server kører på port ${PORT}`);
 });
