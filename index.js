@@ -18,8 +18,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Definer API-endepunktet
 app.post('/api/generate', async (req, res) => {
-  // Hent 'prompt' fra request body
-  const { prompt } = req.body;
+  // Hent 'prompt' og 'schema' fra request body
+  const { prompt, schema } = req.body;
 
   // Tjek om prompt mangler
   if (!prompt) {
@@ -28,21 +28,26 @@ app.post('/api/generate', async (req, res) => {
 
   try {
     // Vælg AI-modellen
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ 
+        model: 'gemini-1.5-flash',
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema,
+        },
+    });
 
     // Send prompten til AI'en og vent på svar
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
-    // Prøv at parse teksten som JSON
+    // Prøv at parse teksten som JSON (selvom AI'en burde returnere det korrekt)
     try {
       const jsonData = JSON.parse(text);
       // Send det parsede JSON-svar tilbage til klienten
       res.json(jsonData);
     } catch (e) {
-      // Hvis det ikke er JSON, så send det som almindelig tekst
-      // Dette kan ske, hvis AI'en svarer med en fejlbesked eller almindelig tekst
+      // Hvis der opstår en fejl under parsing, er svaret sandsynligvis ikke gyldigt JSON
       console.error("Svar fra AI var ikke gyldigt JSON:", text);
       res.status(500).json({ error: 'Svar fra AI var ikke i det forventede format.' });
     }
