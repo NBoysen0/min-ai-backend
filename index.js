@@ -1,100 +1,70 @@
+// Filnavn: index.js
+// Beskrivelse: Denne server-kode er designet til at modtage anmodninger fra din frontend,
+// videresende dem sikkert til Google AI med det korrekte format, og returnere svaret.
+
+// 1. Importer de nødvendige pakker
 const express = require('express');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const dotenv = require('dotenv');
 const cors = require('cors');
+require('dotenv').config(); // Gør det muligt at bruge .env-fil til hemmelige nøgler
 
-dotenv.config();
-
+// 2. Initialiser Express og opsæt middleware
 const app = express();
-app.use(express.json());
-app.use(cors());
+app.use(cors()); // Tillader anmodninger fra din frontend
+app.use(express.json({ limit: '50mb' })); // Gør det muligt at læse JSON-data sendt fra frontend
 
-// Initialiser Google AI med din hemmelige nøgle fra .env-filen
+// 3. Initialiser Google AI
+// Din hemmelige API-nøgle hentes sikkert fra miljøvariablerne
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Definer det JSON-format, vi forventer fra AI'en
-const generationConfig = {
-    responseMimeType: "application/json",
-    responseSchema: {
-        type: "OBJECT",
-        properties: {
-            "navneforslag": {
-                type: "ARRAY",
-                items: {
-                    type: "OBJECT",
-                    properties: {
-                        "navn": { "type": "STRING" },
-                        "mellemnavn": { "type": "STRING" },
-                        "efternavn": { "type": "STRING" },
-                        "oprindelse_betydning": { "type": "STRING" },
-                        "personlig_begrundelse": { "type": "STRING" }
-                    },
-                    required: ["navn", "oprindelse_betydning", "personlig_begrundelse"]
-                }
-            }
-        },
-        required: ["navneforslag"]
-    }
-};
-
-// Vores API-endepunkt, der modtager anmodninger fra hjemmesiden
+// 4. Definer det ENESTE API-endepunkt, som alle funktioner skal bruge
 app.post('/api/generate', async (req, res) => {
-    
-    // ▼▼▼ HELE DENNE 'TRY...CATCH'-BLOK ER DEN OPDATEREDE DEL ▼▼▼
+  
+  // Hent 'prompt' og 'schema' fra den anmodning, som din frontend sender
+  const { prompt, schema } = req.body;
+
+  // Fejlhåndtering: Sørg for, at der altid er en prompt og et schema
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt mangler i anmodningen.' });
+  }
+  if (!schema) {
+    return res.status(400).json({ error: 'Schema mangler i anmodningen.' });
+  }
+
+  try {
+    // Vælg AI-modellen og konfigurer den til at forvente et JSON-svar baseret på det medsendte schema
+    const model = genAI.getGenerativeModel({ 
+        model: 'gemini-1.5-flash',
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema, // Her bruges det schema, som frontend har sendt
+        },
+    });
+
+    // Send prompten til AI'en og vent på svar
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // AI'en bør returnere ren JSON-tekst. Vi parser det for at sikre, det er gyldigt.
     try {
-        const { prompt } = req.body;
-        if (!prompt) {
-            return res.status(400).json({ error: 'Prompt mangler' });
-        }
-
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
-            generationConfig: generationConfig 
-        });
-
-        // OPDATERET: Her kalder vi AI'en med de nye, mildere sikkerhedsindstillinger
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            safetySettings: [
-                {
-                    category: "HARM_CATEGORY_HARASSMENT",
-                    threshold: "BLOCK_NONE",
-                },
-                {
-                    category: "HARM_CATEGORY_HATE_SPEECH",
-                    threshold: "BLOCK_NONE",
-                },
-                {
-                    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    threshold: "BLOCK_NONE",
-                },
-                {
-                    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    threshold: "BLOCK_NONE",
-                },
-            ],
-        });
-        
-        const response = await result.response;
-        const text = response.text();
-
-        // OPDATERET: Valider og send svaret
-        try {
-            const jsonData = JSON.parse(text);
-            res.json(jsonData);
-        } catch (e) {
-            console.error("Svar fra AI var ikke gyldigt JSON:", text);
-            res.status(500).json({ error: 'Svar fra AI var ikke i det forventede format.', originalResponse: text });
-        }
-
-    } catch (error) {
-        console.error('Fejl i API-endepunkt:', error);
-        res.status(500).json({ error: 'Der opstod en generel fejl på serveren.' });
+      const jsonData = JSON.parse(text);
+      // Send det færdige JSON-svar tilbage til frontend
+      res.json(jsonData);
+    } catch (e) {
+      console.error("Svar fra AI var ikke gyldigt JSON:", text);
+      res.status(500).json({ error: 'Svar fra AI var ikke i det forventede format.' });
     }
-    // ▲▲▲ DEN OPDATEREDE DEL SLUTTER HER ▲▲▲
+
+  } catch (error) {
+    // Håndter eventuelle fejl under kaldet til Google AI
+    console.error('Fejl ved kald til Google AI:', error);
+    res.status(500).json({ error: 'Der opstod en fejl på serveren ved kald til AI.' });
+  }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server kører på http://localhost:${port}`);
+// 5. Start serveren
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server kører på port ${PORT}`);
 });
