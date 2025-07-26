@@ -1,7 +1,7 @@
 {
-  "name": "min-ai-backend",
+  "name": "navneunivers-backend",
   "version": "1.0.0",
-  "description": "En simpel backend til at kalde Google AI API sikkert.",
+  "description": "Sikker backend til at håndtere kald til Google AI for Navneunivers-siden.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
